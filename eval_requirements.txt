@@ -1,0 +1,5 @@
+# Extra packages eval.py needs beyond requirements.txt.
+# Everything else (ragas, langchain-groq, langchain-cohere, langchain-pinecone,
+# langgraph, python-dotenv) is already pinned in requirements.txt -- install
+# that file first, then this one.
+pandas

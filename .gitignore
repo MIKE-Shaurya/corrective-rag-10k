@@ -1,0 +1,29 @@
+# Secrets -- never commit these
+.env
+*.env
+!.env.example
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+
+# Downloaded SEC filings (large, regeneratable via ingest.py)
+sec_filings/
+
+# Evaluation output (regeneratable via eval.py)
+results/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
