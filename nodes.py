@@ -13,19 +13,12 @@ from langchain_groq import ChatGroq
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-# temperature=0 -> deterministic, factual behavior. We're not writing poetry here.
-# The model name lives in .env (GROQ_MODEL) because Groq retires models every few
-# months -- when that happens, change the .env value instead of editing code.
-# See https://console.groq.com/docs/models for the current list.
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 llm = ChatGroq(model=GROQ_MODEL, temperature=0)
 
 
 def _is_rate_limit(e: Exception) -> bool:
-    # Exact class name or explicit 429 code -- not a loose substring match on the
-    # message. Groq/OpenAI-style clients raise RateLimitError (.status_code == 429);
-    # ResourceExhausted / .code == 429 are kept for other providers. A *daily*
-    # token-limit 429 (TPD) won't clear by waiting; the retries run out and re-raise.
+
     if type(e).__name__ in ("RateLimitError", "ResourceExhausted"):
         return True
     return 429 in (getattr(e, "status_code", None), getattr(e, "code", None))
@@ -61,8 +54,6 @@ class GraphState(TypedDict):
     rewrite_attempts: int
 
 
-# Company name/ticker aliases -> the ticker used in ingest.py's chunk metadata.
-# Add a row here for every company you actually ingest in COMPANIES (ingest.py).
 TICKER_ALIASES = {
     "apple": "AAPL", "aapl": "AAPL",
     "microsoft": "MSFT", "msft": "MSFT",
@@ -89,9 +80,7 @@ def detect_tickers(question: str) -> list:
     return found
 
 
-# ---------------------------------------------------------------------------
 # Node: retrieve
-# ---------------------------------------------------------------------------
 TICKER_NAMES = {"AAPL": "Apple", "MSFT": "Microsoft", "TSLA": "Tesla", "NVDA": "NVIDIA", "GOOGL": "Alphabet"}
 
 
@@ -144,9 +133,6 @@ def retrieve_chunks(vectorstore, question: str, k: int = 3) -> list:
         docs = vectorstore.similarity_search(question, k=k, filter=filter_dict)
         return [d.page_content for d in docs]
 
-    # Vague comparison wording ("most recent fiscal year", "which had higher...")
-    # retrieves generic MD&A text rather than the income statement, so each
-    # company gets its own standalone, filing-style lookup query.
     queries = _per_company_queries(question, tickers)
     all_docs = []
     for ticker, q in zip(tickers, queries):
@@ -161,9 +147,7 @@ def retrieve(state: GraphState, vectorstore, k: int = 3) -> GraphState:
     return {**state, "documents": retrieve_chunks(vectorstore, state["question"], k)}
 
 
-# ---------------------------------------------------------------------------
 # Node: give_up
-# ---------------------------------------------------------------------------
 def give_up(state: GraphState) -> GraphState:
     """Reached when rewriting the query MAX_REWRITES times still found no
     relevant documents. Without this node, the graph used to jump straight to
@@ -176,13 +160,12 @@ def give_up(state: GraphState) -> GraphState:
             "I couldn't find information relevant to this question in the "
             "ingested filings, even after rewriting the query."
         ),
-        "grounded": True,  # an explicit "I don't know" makes no unsupported claims
+        "grounded": True, 
     }
 
 
-# ---------------------------------------------------------------------------
-# Helper: turn a one-word LLM reply into a boolean
-# ---------------------------------------------------------------------------
+
+# Helper: turn a one-word LLM reply into a boolea
 def _parse_yes_no(text: str) -> bool:
     """Interpret an LLM reply as a boolean by looking at its first word.
 
@@ -194,13 +177,12 @@ def _parse_yes_no(text: str) -> bool:
     """
     words = (text or "").strip().lower().split()
     if not words:
-        return False  # empty reply -> treat as "no" (fails safe)
+        return False  
     return words[0].strip(".,!:;\"'*") in ("yes", "true")
 
 
-# ---------------------------------------------------------------------------
+
 # Helper: parse a numbered yes/no verdict list back into booleans, in order
-# ---------------------------------------------------------------------------
 def _parse_numbered_verdicts(text: str, expected_count: int):
     """Parse lines like '1: yes' / '2. no' into {index: bool}, 1-indexed.
 
@@ -222,9 +204,8 @@ def _parse_numbered_verdicts(text: str, expected_count: int):
     return verdicts
 
 
-# ---------------------------------------------------------------------------
+
 # Node: grade_documents
-# ---------------------------------------------------------------------------
 def grade_documents(state: GraphState) -> GraphState:
     """Check all retrieved chunks in ONE call instead of one call per chunk.
 
@@ -268,9 +249,8 @@ def grade_documents(state: GraphState) -> GraphState:
     return {**state, "documents": relevant_docs}
 
 
-# ---------------------------------------------------------------------------
+
 # Node: rewrite_query
-# ---------------------------------------------------------------------------
 def rewrite_query(state: GraphState) -> GraphState:
     """No relevant docs were found -- reword the question and try retrieval again."""
     prompt = ChatPromptTemplate.from_template(
@@ -284,9 +264,9 @@ def rewrite_query(state: GraphState) -> GraphState:
     return {**state, "question": new_question.strip(), "rewrite_attempts": state.get("rewrite_attempts", 0) + 1}
 
 
-# ---------------------------------------------------------------------------
+
 # Node: generate
-# ---------------------------------------------------------------------------
+
 def _strip_context_leak(text: str) -> str:
     """Belt-and-suspenders cleanup: the generation prompt TELLS the model not
     to paste raw context/table fragments into its answer, but gpt-oss-120b
@@ -321,9 +301,9 @@ def generate(state: GraphState) -> GraphState:
     return {**state, "generation": _strip_context_leak(answer)}
 
 
-# ---------------------------------------------------------------------------
+
 # Node: check_grounding
-# ---------------------------------------------------------------------------
+
 def check_grounding(state: GraphState) -> GraphState:
     """Hallucination check: does the generated answer only say things the context supports?"""
     prompt = ChatPromptTemplate.from_template(
