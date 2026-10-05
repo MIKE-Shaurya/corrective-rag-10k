@@ -1,12 +1,3 @@
-"""
-ingest.py
-Downloads 10-K filings from SEC EDGAR, chunks them, embeds them, and
-upserts them into a Pinecone index.
-
-Run this once (or whenever you want to refresh/expand the corpus):
-    python ingest.py
-"""
-
 import os
 import re
 import time
@@ -24,14 +15,14 @@ from pinecone import Pinecone, ServerlessSpec
 load_dotenv()
 
 # ---- Config ----
-COMPANIES = ["AAPL", "MSFT", "TSLA", "NVDA", "GOOGL"]   # tickers to pull 10-Ks for
-FILINGS_PER_COMPANY = 1                                   # most recent N annual filings
+COMPANIES = ["AAPL", "MSFT", "TSLA", "NVDA", "GOOGL"]   
+FILINGS_PER_COMPANY = 1                                   
 DOWNLOAD_DIR = "sec_filings"
-CHUNK_SIZE = 1500        # characters per chunk (not tokens -- keep it simple)
-CHUNK_OVERLAP = 200       # overlap so we don't cut facts in half at chunk boundaries
-EMBEDDING_MODEL = "embed-english-v3.0"  # Cohere's free trial embedding model
+CHUNK_SIZE = 1500        
+CHUNK_OVERLAP = 200       
+EMBEDDING_MODEL = "embed-english-v3.0"  
 PINECONE_INDEX_NAME = os.environ["PINECONE_INDEX_NAME"]
-EMBEDDING_DIMENSIONS = 1024  # embed-english-v3.0's output size (different from Gemini's 3072!)
+EMBEDDING_DIMENSIONS = 1024   
 
 
 def download_filings():
@@ -66,11 +57,11 @@ def html_to_clean_text(html_path: Path) -> str:
     with open(html_path, "r", encoding="utf-8", errors="ignore") as f:
         soup = BeautifulSoup(f.read(), "html.parser")
 
-    # Remove scripts/styles -- pure noise, no financial content
+    
     for tag in soup(["script", "style"]):
         tag.decompose()
 
-    ROW_BREAK = "@@ROWBREAK@@"  # unlikely to collide with real filing content
+    ROW_BREAK = "@@ROWBREAK@@"  
 
     for table in soup.find_all("table"):
         row_lines = []
@@ -79,17 +70,14 @@ def html_to_clean_text(html_path: Path) -> str:
             cells = [c for c in cells if c]  # SEC tables are full of empty spacer <td>s
             if cells:
                 row_lines.append(" | ".join(cells))
-        # Replace the whole table with its row-preserving text, or drop it if
-        # every row was empty spacers (common for layout-only tables).
+        
         table.replace_with(f"{ROW_BREAK}{ROW_BREAK.join(row_lines)}{ROW_BREAK}" if row_lines else "")
 
     text = soup.get_text(separator=" ")
-    # Collapse ALL whitespace (including any stray newlines inside raw cell text) to single
-    # spaces first. The sentinel is plain text with no whitespace in it, so it survives this
-    # untouched -- we don't need to special-case \n to protect it.
+    
     text = re.sub(r"\s+", " ", text).strip()
-    text = re.sub(r"\s*" + re.escape(ROW_BREAK) + r"\s*", "\n", text)  # sentinel -> real line break
-    text = re.sub(r"\n{2,}", "\n", text).strip()  # drop stray blank lines from empty tables
+    text = re.sub(r"\s*" + re.escape(ROW_BREAK) + r"\s*", "\n", text)  
+    text = re.sub(r"\n{2,}", "\n", text).strip()  
     return text
 
 
@@ -98,7 +86,7 @@ def load_and_chunk_documents() -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ". ", " ", ""],  # tries paragraph breaks before brute-force cuts
+        separators=["\n\n", "\n", ". ", " ", ""], 
     )
 
     all_chunks: list[Document] = []
@@ -112,9 +100,7 @@ def load_and_chunk_documents() -> list[Document]:
             if html_files:
                 text = html_to_clean_text(html_files[0])
             else:
-                # Fallback: no clean .htm found (e.g. download_details wasn't set).
-                # full-submission.txt is SGML-wrapped but BeautifulSoup can still
-                # strip the tags reasonably well as a last resort.
+             
                 fallback = filing_dir / "full-submission.txt"
                 if not fallback.exists():
                     print(f"  WARNING: no .htm or full-submission.txt found in {filing_dir}, skipping")
@@ -151,27 +137,21 @@ def upsert_to_pinecone(chunks: list[Document]):
     pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
     ensure_index_exists(pc)
 
-    # Wipe whatever's already in the index before re-upserting. Without this,
-    # re-running ingest.py after a chunking change (e.g. the table-flattening
-    # fix) just ADDS the new, better chunks alongside the old, worse ones --
-    # the retriever can still surface a stale flattened chunk instead of the
-    # fixed one. This makes "refresh the corpus" an actual rebuild, not an append.
+    
     index = pc.Index(PINECONE_INDEX_NAME)
     stats = index.describe_index_stats()
     existing_vectors = stats.get("total_vector_count", 0)
     if existing_vectors:
         print(f"Clearing {existing_vectors} existing vectors from '{PINECONE_INDEX_NAME}' before re-upserting...")
         index.delete(delete_all=True)
-        time.sleep(5)  # Pinecone's delete is eventually consistent; give it a moment
+        time.sleep(5) 
 
     embedder = CohereEmbeddings(model=EMBEDDING_MODEL)
     vectorstore = PineconeVectorStore(index_name=PINECONE_INDEX_NAME, embedding=embedder)
 
-    # Cohere's trial key: max 96 texts per embed call, 20 requests/min, 1,000 calls/month
-    # total across all Cohere endpoints. Batching at 90 texts/call keeps total calls for
-    # this whole corpus in the dozens, not thousands -- comfortably inside all three limits.
+   
     BATCH_SIZE = 90
-    PAUSE_SECONDS = 4  # keeps us under 20 requests/minute
+    PAUSE_SECONDS = 4  
 
     total = len(chunks)
     print(f"Embedding {total} chunks in batches of {BATCH_SIZE} via Cohere...")
