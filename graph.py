@@ -1,15 +1,3 @@
-"""
-graph.py
-Wires the individual node functions (nodes.py) into the actual LangGraph
-state machine: retrieve -> grade -> (rewrite loop) -> generate ->
-check_grounding -> (regenerate loop) -> end.
-
-If grading finds no relevant documents even after MAX_REWRITES rewrites, the
-graph now routes to give_up (nodes.py) instead of jumping straight to END --
-that node writes an explicit "I don't know" into state["generation"] so the
-system never silently returns an empty answer.
-"""
-
 from langgraph.graph import StateGraph, END
 
 from nodes import (
@@ -24,7 +12,7 @@ from nodes import (
 
 MAX_REWRITES = 2
 MAX_RETRIES = 2
-DEFAULT_K = 5  # see eval.py's TOP_K comment for the trade-off
+DEFAULT_K = 5 
 
 
 def increment_rewrites(state: GraphState) -> GraphState:
@@ -50,8 +38,6 @@ def route_after_grading(state: GraphState) -> str:
 
 
 def route_after_grounding(state: GraphState) -> str:
-    """Hallucination gate: only return the answer once it's grounded, or once
-    we've retried enough times that looping forever isn't worth the cost."""
     if state["grounded"] or state["retries"] >= MAX_RETRIES:
         return "end"
     return "regenerate"
