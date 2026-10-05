@@ -34,8 +34,6 @@ def download_filings():
     )
     for ticker in COMPANIES:
         print(f"Downloading 10-K for {ticker}...")
-        # download_details=True is required -- without it, sec-edgar-downloader only
-        # saves the raw full-submission.txt (SGML-wrapped), not a clean .htm file.
         dl.get("10-K", ticker, limit=FILINGS_PER_COMPANY, download_details=True)
 
 
